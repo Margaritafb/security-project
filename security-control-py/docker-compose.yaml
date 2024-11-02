@@ -1,0 +1,46 @@
+version: '3'
+
+services:
+  # Redis para almacenar solo el último valor (sobrescritura)
+  redis-latest:
+    image: redis:latest
+    container_name: redis-latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_latest_data:/data
+
+  # Redis para almacenar el historial completo de lecturas
+  redis-history:
+    image: redis:latest
+    container_name: redis-history
+    ports:
+      - "6380:6379"  # Exponemos un puerto diferente para evitar conflictos
+    volumes:
+      - redis_history_data:/data
+
+  # Servicio de security-worker
+  security-worker:
+    build:
+      context: .  # Usa el Dockerfile en el directorio actual
+    container_name: security-worker
+    depends_on:
+      - redis-latest
+      - redis-history
+    command: ["python", "security-worker.py"]  # Ejecuta el worker al iniciar
+
+  # Servicio API para acceder a los datos de ambos Redis
+  api:
+    build:
+      context: .  # Usa el Dockerfile en el directorio actual
+    container_name: security-api
+    depends_on:
+      - redis-latest
+      - redis-history
+    ports:
+      - "8000:8000"  # Exposición del puerto 8000
+    command: ["python", "api.py"]  # Ejecuta la API al iniciar
+
+volumes:
+  redis_latest_data:
+  redis_history_data:
