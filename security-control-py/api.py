@@ -8,13 +8,13 @@ app = FastAPI()
 
 # Configuración de conexión a Redis
 
-redis_latest = Redis(host="redis-latest", port=6380, db=0)
-redis_history = Redis(host="redis-history", port=6379, db=0)
+redis_latest = Redis(host="redis-latest", port=6379, db=0)
+redis_history = Redis(host="redis-history", port=6380, db=0)
 
 @app.get("/")
 def read_root():
     """Ruta raíz de prueba."""
-    return {"message": "API de Security-Control"}
+    return {"message": "API de Ssecurity-Control"}
 
 @app.get("/latest/{sensor_id}")
 def get_latest_reading(sensor_id: int):

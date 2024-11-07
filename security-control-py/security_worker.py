@@ -52,34 +52,34 @@ class MQTTReader:
         Raises:
             ValueError: Si el checksum no coincide o el formato es incorrecto.
         """
+        
         if len(message) != 9:
-            raise ValueError("El mensaje debe contener exactamente 9 bytes.")
-
-        # Decodificación del mensaje
-        sensor_id = ord(message[0:1].decode('ascii'))
-        day = ord(message[1:2].decode('ascii'))
-        month = ord(message[2:3].decode('ascii'))
-        year = ord(message[3:4].decode('ascii'))
-        hour = ord(message[4:5].decode('ascii'))
-        minute = ord(message[5:6].decode('ascii'))
-        second = ord(message[6:7].decode('ascii'))
-        sensor_state = 1 if ord(message[7:8].decode('ascii')) == 1 else 0
-        received_checksum = ord(message[8:9].decode('ascii'))
-
-        # Calcular el checksum esperado
-        calculated_checksum = (sensor_id + day + month + year + hour + minute + second + sensor_state) & 0xFF
+            raise ValueError("El mensaje debe tener exactamente 9 bytes.")
+    
+        # Extraer los campos
+        button_id = message[0]
+        timestamp = (
+            (message[1] << 40) |
+            (message[2] << 32) |
+            (message[3] << 24) |
+            (message[4] << 16) |
+            (message[5] << 8) |
+            message[6]
+        )
+        button_state = message[7]
+    
+        # Calcular y verificar el checksum
+        calculated_checksum = sum(message[:8]) & 0xFF
+        received_checksum = message[8]
         if calculated_checksum != received_checksum:
             raise ValueError("Checksum no coincide, mensaje corrupto.")
-
-        # Crear el timestamp en formato ISO
-        timestamp = f"{year:02}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}"
-
-        # Crear el diccionario de salida con sensor_id, timestamp, y sensor_state
+    
         return {
-            "sensor_id": sensor_id,
+            "sensor_id": button_id,
             "timestamp": timestamp,
-            "sensor_state": sensor_state
+            "sensor_state": button_state,
         }
+
 
     def process_messages(self, client, userdata, message):
         """
@@ -93,6 +93,9 @@ class MQTTReader:
         logger = logging.getLogger(__name__)
         payload = message.payload
 
+        # Imprimir el mensaje en bruto
+        logger.info(f"Mensaje recibido en bruto: {payload}")
+        
         try:
             # Decodificar el mensaje de 9 bytes y colocarlo en la cola
             decoded_message = self.__decode_message(payload)
@@ -108,7 +111,7 @@ class MQTTReader:
         logger = logging.getLogger(__name__)
         self._running = True
         self.__client.subscribe(self.__topic)
-        self.__client.on_message = self.__on_message
+        self.__client.on_message = self.process_messages
         logger.info("Running MQTT reader")
         self.__client.loop_forever()
 
@@ -174,7 +177,7 @@ def main():
     client.connect(host=MQTT_BROKER, port=MQTT_PORT)
 
     # Inicializa MQTTReader y QueueConsumer
-    mqtt_reader = MQTTReader(client=client, topic="security-topic", output_queue=received_queue)
+    mqtt_reader = MQTTReader(client=client, topic="esp32/buttons", output_queue=received_queue)
     queue_consumer = QueueConsumer(input_queue=received_queue, redis_latest=redis_latest, redis_history=redis_history)
 
     # Inicia los hilos
