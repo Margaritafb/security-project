@@ -1,5 +1,5 @@
 import json
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from typing import Optional
 from redis import Redis
 import uvicorn
@@ -60,23 +60,21 @@ def get_sensor_history(sensor_id: int, limit: Optional[int] = Query(10, ge=1, le
 @app.get("/send_latest/{sensor_id}")
 def send_latest_reading_to_esp32(sensor_id: int):
     """
-    Construye un mensaje de 9 bytes con la última lectura del sensor y lo imprime en la consola.
-    Args:
-        sensor_id (int): Identificador del sensor.
-    Returns:
-        dict: Confirmación de envío o mensaje de error si no existe.
+    Construye un mensaje de 9 bytes con la última lectura del sensor usando el timestamp de Redis y lo retorna como un bytearray.
     """
+    # Obtener datos del sensor desde Redis
     data = redis_latest.hgetall(f"sensor:{sensor_id}")
     if not data:
         raise HTTPException(status_code=404, detail="Sensor no encontrado en redis_latest")
 
-    # Decodificar datos de Redis
+    # Decodificar datos desde Redis
     decoded_data = {k.decode('utf-8'): v.decode('utf-8') for k, v in data.items()}
-    sensor_state = int(decoded_data.get("sensor_state", 0))  # Valor predeterminado: 0 si no existe
+    sensor_state = int(decoded_data.get("sensor_state", 0))  # Estado del sensor, 0 por defecto
+    timestamp = int(decoded_data.get("timestamp", 0))  # Timestamp almacenado en Redis
 
-    # Obtener la fecha y hora actual
-    now = datetime.now()
-    day, month, year, hour, minute, second = now.day, now.month, now.year % 100, now.hour, now.minute, now.second
+    # Decodificar el timestamp en día, mes, año, hora, minuto y segundo
+    dt = datetime.fromtimestamp(timestamp)
+    day, month, year, hour, minute, second = dt.day, dt.month, dt.year % 100, dt.hour, dt.minute, dt.second
 
     # Construir el mensaje de 9 bytes
     message = bytearray(9)
@@ -93,17 +91,8 @@ def send_latest_reading_to_esp32(sensor_id: int):
     checksum = sum(message[:8]) & 0xFF
     message[8] = checksum
 
-    # Imprimir el mensaje en la consola
-    print(f"[Console Output] Enviando mensaje: {list(message)}")
-
-    return {
-        #"sensor_id": sensor_id,
-        #"status": "Message constructed and printed to console",
-        #"latest_reading": decoded_data,
-        "message": list(message)  # Retornar los bytes como lista para debug
-    }
-    
-    #solucion final: solo retorna el mensaje en bytes
+    # Retornar el mensaje como datos binarios
+    return Response(content=bytes(message), media_type="application/octet-stream")
     
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
